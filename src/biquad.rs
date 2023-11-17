@@ -64,6 +64,10 @@ pub struct Biquad<const X: i32, const Y: i32> {
     // history
     x: HistoryBuffer<FixedI32<X>, 2>,
     y: HistoryBuffer<FixedI32<Y>, 2>,
+
+    // limits
+    min_y: FixedI32<Y>,
+    max_y: FixedI32<Y>,
 }
 
 impl<const X: i32, const Y: i32> Biquad<X, Y> {
@@ -73,8 +77,28 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// should use one of the associated methods which will automatically
     /// calculate the coefficients for the standard filter forms from the
     /// sampling frequency, center frequency, and the quality factor.
-    pub fn new(a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) -> Self {
+    pub fn new(
+        a0: f32,
+        a1: f32,
+        a2: f32,
+        b0: f32,
+        b1: f32,
+        b2: f32,
+        min_y: Option<f32>,
+        max_y: Option<f32>,
+    ) -> Self {
         let (a1, a2, b0, b1, b2) = normalize(a0, a1, a2, b0, b1, b2);
+        let min_y = if let Some(y) = min_y {
+            FixedI32::<Y>::from_num(y)
+        } else {
+            FixedI32::<Y>::MIN
+        };
+        let max_y = if let Some(y) = max_y {
+            FixedI32::<Y>::from_num(y)
+        } else {
+            FixedI32::<Y>::MAX
+        };
+
         Self {
             a1: Coef::from_num(a1),
             a2: Coef::from_num(a2),
@@ -83,7 +107,27 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
             b2: Coef::from_num(b2),
             x: HistoryBuffer::new_with(FixedI32::<X>::ZERO),
             y: HistoryBuffer::new_with(FixedI32::<Y>::ZERO),
+            min_y,
+            max_y,
         }
+    }
+
+    pub fn set_min(&mut self, y: f32) {
+        self.min_y = FixedI32::<Y>::from_num(y);
+    }
+
+    pub fn set_max(&mut self, y: f32) {
+        self.max_y = FixedI32::<Y>::from_num(y);
+    }
+
+    pub fn with_min(mut self, y: f32) -> Self {
+        self.set_min(y);
+        self
+    }
+
+    pub fn with_max(mut self, y: f32) -> Self {
+        self.set_max(y);
+        self
     }
 
     /// Add a new input sample and get the resulting output
@@ -96,6 +140,14 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         y.mul_acc(self.b2, *self.x.oldest().unwrap());
         y.mul_acc(-self.a1, *self.y.recent().unwrap());
         y.mul_acc(-self.a2, *self.y.oldest().unwrap());
+
+        // add limits
+        if y < self.min_y {
+            y = self.min_y
+        }
+        if y > self.max_y {
+            y = self.max_y
+        }
 
         // update the FIFOs
         self.x.write(x);
@@ -139,7 +191,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b2 = 0.;
         let a1 = alpha - 1.;
         let a2 = 0.;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 
     /// Constructs a lowpass biquad filter
@@ -164,7 +216,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b0 = (1. - cos_omega) / 2.;
         let b1 = 2. * b0;
         let b2 = b0;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 
     /// Constructs a highpass biquad filter
@@ -189,7 +241,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b0 = (1. + cos_omega) / 2.;
         let b1 = -2. * b0;
         let b2 = b0;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 
     /// Constructs a bandpass biquad filter
@@ -214,7 +266,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b0 = alpha;
         let b1 = 0.;
         let b2 = -b0;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 
     /// Constructs a notch biquad filter
@@ -239,7 +291,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b0 = 1.;
         let b1 = a1;
         let b2 = 1.;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 
     /// Constructs a biquad filter with proportional-integral behavior
@@ -260,7 +312,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         let b0 = kp + ki;
         let b1 = -kp;
         let b2 = 0.;
-        Self::new(a0, a1, a2, b0, b1, b2)
+        Self::new(a0, a1, a2, b0, b1, b2, None, None)
     }
 }
 
@@ -390,5 +442,24 @@ mod tests {
         filter.reset();
         let amplitude = simulate(2.0 * f0, fs, &mut filter);
         assert!(amplitude > 0.7);
+    }
+
+    #[test]
+    fn limits() {
+        let kp = 0.2;
+        let ki = 0.1;
+        let mut filter = Biquad::<25, 25>::pi(kp, ki).with_max(1.0);
+        let mut y = FixedI32::<25>::ZERO;
+        for _ in 0..100 {
+            y = filter.update(FixedI32::<25>::from_num(1.0))
+        }
+        assert!(y <= 1.0);
+
+        let mut filter = Biquad::<25, 25>::pi(kp, ki).with_min(-1.0);
+        let mut y = FixedI32::<25>::ZERO;
+        for _ in 0..100 {
+            y = filter.update(FixedI32::<25>::from_num(-1.0))
+        }
+        assert!(y >= -1.0);
     }
 }

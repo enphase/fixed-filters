@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn highpas() {
+    fn highpass() {
         let fs = 10e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth

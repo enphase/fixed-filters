@@ -2,7 +2,7 @@
 
 Biquad filters for fixed-point numbers.
 
-`fixed-filters` is a `#![no_std]` library for creating [biquad](https://en.wikipedia.org/wiki/Digital_biquad_filter).  These are simple 2nd order IIR filters which can be configured to implement a variety of filter behaviors (i.e. lowpass, bandpass, highpass, notch, proportional-integral, etc).  It is designed specifically to work with 32-bit fixed-point numbers based on the [fixed](https://crates.io/crates/fixed) crate.
+`fixed-filters` is a `#![no_std]` library for creating [biquad filters](https://en.wikipedia.org/wiki/Digital_biquad_filter).  These are simple 2nd order IIR filters which can be configured to implement a variety of filter behaviors (i.e. lowpass, bandpass, highpass, notch, proportional-integral, etc).  It is designed specifically to work with 32-bit fixed-point numbers based on the [fixed](https://crates.io/crates/fixed) crate.
 
 **Alpha:** This crate requires the alpha release of 2.0.0 of the [fixed](https://crates.io/crates/fixed) crate that makes use of const generics instead of the [*typenum*
 crate](https://crates.io/crate/typenum). This version requires the nightly compiler with the [`generic_const_exprs` feature] enabled.
@@ -28,7 +28,7 @@ let b1 = 0.000100482;
 let b2 = 0.000050241;
 
 // make a filter with 20 fractional bits on input and 16 fractional bits on output
-let mut filter = Biquad::<20, 20>::new(a0, a1, a2, b0, b1, b2);
+let mut filter = Biquad::<20, 16>::new(a0, a1, a2, b0, b1, b2);
 
 let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
 let mut y = FixedI32::<16>::ZERO;
@@ -74,8 +74,8 @@ The results are shown bellow:
 
 ## No limits, no re-scaling
 
-| Crate         | Ticks         |
+| Crate         | Cycles        |
 | ------------- | -------------:|
-| fixed-filters | 10            |
+| fixed-filters | 291           |
 | biquad        | 10            |
 | idsp::iir_int | 10            |

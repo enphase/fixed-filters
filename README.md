@@ -70,12 +70,10 @@ let mut filter = Biquad::<16, 16>::pi(kp, ki).with_limit(20.0);
 
 The performance of this crate was benchmarked against other available `#![no_std]` biquad filter implementations by running a filter at 10kHz in a simple [RTIC](https://rtic.rs/1/book/en/) application on an STM32F411RE Nucelo board.  The RTIC monotonic API was used to quantify the number of ticks used for each filters' update method.
 
-The results are shown bellow:
 
-## No limits, no re-scaling
-
-| Crate         | Cycles        |
-| ------------- | -------------:|
-| fixed-filters | 291           |
-| biquad        | 10            |
-| idsp::iir_int | 10            |
+| Crate                         | Cycles  |
+| ----------------------------- | -------:|
+| fixed-filters                 | 90      |
+| biquad::DirectForm1           | 70      |
+| biquad::DirectForm2Transposed | 64      |
+| idsp::iir_int                 |         |

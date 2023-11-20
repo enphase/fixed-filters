@@ -9,7 +9,6 @@ license = "Apache-2.0"
 
 [dependencies]
 fixed = "2.0.0-alpha.12"
-heapless = {git = "https://github.com/rust-embedded/heapless.git", rev = "a33989f25590faccef60df8eb48defff67c2179d" }
 micromath = "2.1.0"
 
 [dev-dependencies]

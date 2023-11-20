@@ -4,7 +4,6 @@ use micromath::F32Ext; // enable floating point sin/cos approximations in microc
 use core::f32::consts::PI;
 use fixed::types::I2F30;
 use fixed::FixedI32;
-use heapless::HistoryBuffer;
 
 type Coef = I2F30;
 
@@ -62,8 +61,10 @@ pub struct Biquad<const X: i32, const Y: i32> {
     b2: Coef,
 
     // history
-    x: HistoryBuffer<FixedI32<X>, 2>,
-    y: HistoryBuffer<FixedI32<Y>, 2>,
+    x0: FixedI32<X>,
+    x1: FixedI32<X>,
+    y0: FixedI32<Y>,
+    y1: FixedI32<Y>,
 
     // limits
     min_y: Option<FixedI32<Y>>,
@@ -80,13 +81,15 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     pub fn new(a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) -> Self {
         let (a1, a2, b0, b1, b2) = normalize(a0, a1, a2, b0, b1, b2);
         Self {
-            a1: Coef::from_num(a1),
-            a2: Coef::from_num(a2),
+            a1: -Coef::from_num(a1), // store as negative so we don't need to negate in update
+            a2: -Coef::from_num(a2),
             b0: Coef::from_num(b0),
             b1: Coef::from_num(b1),
             b2: Coef::from_num(b2),
-            x: HistoryBuffer::new_with(FixedI32::<X>::ZERO),
-            y: HistoryBuffer::new_with(FixedI32::<Y>::ZERO),
+            x0: FixedI32::<X>::ZERO,
+            x1: FixedI32::<X>::ZERO,
+            y0: FixedI32::<Y>::ZERO,
+            y1: FixedI32::<Y>::ZERO,
             min_y: None,
             max_y: None,
         }
@@ -124,14 +127,13 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     pub fn update(&mut self, x: FixedI32<X>) -> FixedI32<Y> {
         // Calculate the biquad output using Direct Form 1
         // TODO: Consider using a double wide accumulator for better precision
-        let mut y = FixedI32::<Y>::ZERO;
+        let mut y = self.y0;
+        y *= self.a1;
+        y.mul_acc(self.a2, self.y1);
         y.mul_acc(self.b0, x);
-        y.mul_acc(self.b1, *self.x.recent().unwrap());
-        y.mul_acc(self.b2, *self.x.oldest().unwrap());
-        y.mul_acc(-self.a1, *self.y.recent().unwrap());
-        y.mul_acc(-self.a2, *self.y.oldest().unwrap());
+        y.mul_acc(self.b1, self.x0);
+        y.mul_acc(self.b2, self.x1);
 
-        // add limits
         if let Some(limit) = self.min_y && y < limit{
             y = limit;
         }
@@ -140,8 +142,10 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         }
 
         // update the FIFOs
-        self.x.write(x);
-        self.y.write(y);
+        self.x1 = self.x0;
+        self.x0 = x;
+        self.y1 = self.y0;
+        self.y0 = y;
 
         y
     }
@@ -150,13 +154,15 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     ///
     /// This will clear the fifos in the biquad filter
     pub fn reset(&mut self) {
-        self.x.clear_with(FixedI32::<X>::ZERO);
-        self.y.clear_with(FixedI32::<Y>::ZERO);
+        self.x0 = FixedI32::<X>::ZERO;
+        self.x1 = FixedI32::<X>::ZERO;
+        self.y0 = FixedI32::<Y>::ZERO;
+        self.y1 = FixedI32::<Y>::ZERO;
     }
 
     /// Return the latest output of the filter without updating
     pub fn value(&self) -> FixedI32<Y> {
-        *self.y.recent().unwrap()
+        self.y0
     }
 
     /// Constructs a biquad filter with single pole lowpass (i.e.  "RC") behavior

@@ -53,7 +53,7 @@ The library includes associted functions for creating the following filter forms
 1.  lowpass
 2.  bandpass
 3.  highpass
-4.  noth
+4.  notch
 5.  single_pole_lowpass
 6.  proportional-integral behavior
 
@@ -68,12 +68,13 @@ let mut filter = Biquad::<16, 16>::pi(kp, ki).with_limit(20.0);
 
 # Benchmarking
 
-The performance of this crate was benchmarked against other available `#![no_std]` biquad filter implementations by running a filter at 10kHz in a simple [RTIC](https://rtic.rs/1/book/en/) application on an STM32F411RE Nucelo board.  The RTIC monotonic API was used to quantify the number of ticks used for each filters' update method.
-
+The performance of this crate was benchmarked against other available `#![no_std]` biquad filter implementations by running a filter at 10kHz in a simple [RTIC](https://rtic.rs/1/book/en/) application on an STM32F411RE Nucelo board.  The RTIC monotonic API was used to quantify the number of CPU cycles used for each filters' update method.
 
 | Crate                         | Cycles  |
-| ----------------------------- | -------:|
-| fixed-filters                 | 90      |
-| biquad::DirectForm1           | 70      |
-| biquad::DirectForm2Transposed | 64      |
-| idsp::iir_int                 |         |
+| :---------------------------- |:-------:|
+| fixed-filters                 | 88      |
+| biquad::DirectForm1           | 79      |
+| biquad::DirectForm2Transposed | 76      |
+| idsp::iir_int                 | 85      |
+
+From these results, the existing [biquad](https://crates.io/crates/biquad/0.3.0) crate actually provides the best performance in the case that the microcontroller has an FPU.  This crate however does not support internal limiting of the output signal which can be critical in certain applications such as implementing anti-windup and PI controllers.  The crate has nearly identical performance to [idsp::iir_int](https://github.com/quartiq/idsp/blob/main/src/iir_int.rs).

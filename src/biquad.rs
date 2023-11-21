@@ -136,12 +136,21 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         // Calculate the biquad output using Direct Form 1 with double wide accumulation
         // Testing has showed that the compiler optimises this best when coded in a single
         // line of integer multiplies/adds
-        let mut y = (((self.a1 as i64) * (self.y0 as i64)
-            + (self.a2 as i64) * (self.y1 as i64)
-            + (((self.b0 as i64) * (x.to_bits() as i64)) >> (X - Y))
-            + (((self.b1 as i64) * (self.x0 as i64)) >> (X - Y))
-            + (((self.b2 as i64) * (self.x1 as i64)) >> (X - Y)))
-            >> Coef::FRAC_BITS) as i32;
+        let mut y = if X > Y {
+            (((self.a1 as i64) * (self.y0 as i64)
+                + (self.a2 as i64) * (self.y1 as i64)
+                + (((self.b0 as i64) * (x.to_bits() as i64)) >> (X - Y))
+                + (((self.b1 as i64) * (self.x0 as i64)) >> (X - Y))
+                + (((self.b2 as i64) * (self.x1 as i64)) >> (X - Y)))
+                >> Coef::FRAC_BITS) as i32
+        } else {
+            (((self.a1 as i64) * (self.y0 as i64)
+                + (self.a2 as i64) * (self.y1 as i64)
+                + (((self.b0 as i64) * (x.to_bits() as i64)) << (Y - X))
+                + (((self.b1 as i64) * (self.x0 as i64)) << (Y - X))
+                + (((self.b2 as i64) * (self.x1 as i64)) << (Y - X)))
+                >> Coef::FRAC_BITS) as i32
+        };
 
         // add limits
         y = y.clamp(self.min_y, self.max_y);
@@ -461,13 +470,15 @@ mod tests {
         let fs = 10e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter0 = Biquad::<16, 16>::lowpass(1. / fs, f0, q);
-        let mut filter1 = Biquad::<20, 12>::lowpass(1. / fs, f0, q);
-        let mut filter2 = Biquad::<12, 20>::lowpass(1. / fs, f0, q);
+        let mut filter0 = Biquad::<25, 25>::lowpass(1. / fs, f0, q);
+        let mut filter1 = Biquad::<25, 20>::lowpass(1. / fs, f0, q);
+        let mut filter2 = Biquad::<20, 25>::lowpass(1. / fs, f0, q);
 
         // // simulate
         let a0 = simulate(f0, fs, &mut filter0);
         let a1 = simulate(f0, fs, &mut filter1);
         let a2 = simulate(f0, fs, &mut filter2);
+        assert_abs_diff_eq!(a0.to_num::<f32>(), a1.to_num::<f32>(), epsilon = 0.001);
+        assert_abs_diff_eq!(a1.to_num::<f32>(), a2.to_num::<f32>(), epsilon = 0.001);
     }
 }

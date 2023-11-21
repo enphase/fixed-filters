@@ -68,13 +68,13 @@ let mut filter = Biquad::<16, 16>::pi(kp, ki).with_limit(20.0);
 
 # Benchmarking
 
-The performance of this crate was benchmarked against other available `#![no_std]` biquad filter implementations by running a filter at 10kHz in a simple [RTIC](https://rtic.rs/1/book/en/) application on an STM32F411RE Nucelo board.  The RTIC monotonic API was used to quantify the number of CPU cycles used for each filters' update method.
+The performance of this crate was benchmarked against other available `#![no_std]` biquad filter implementations by running a filter at 10kHz in a simple [RTIC](https://rtic.rs/1/book/en/) application on an [STM32F411RE Nucelo](https://www.st.com/en/evaluation-tools/nucleo-f411re.html) board.  The RTIC monotonic API was used to quantify the number of CPU cycles used for each filters' update method.
 
 | Crate                         | Cycles  |
 | :---------------------------- |:-------:|
-| fixed-filters                 | 81      |
-| biquad::DirectForm1           | 81      |
-| biquad::DirectForm2Transposed | 73      |
-| idsp::iir_int                 | 93      |
+| fixed-filters                 | 80      |
+| biquad::DirectForm1           | 80      |
+| biquad::DirectForm2Transposed | 72      |
+| idsp::iir_int                 | 90      |
 
 From these results, it can be seen that the crates all provide similar performance in terms of execution efficiency with [biquad](https://crates.io/crates/biquad/0.3.0) DirectForm2Transposed having a slight edge in microcontrollers with an FPU.  This crate however does not support internal limiting of the output signal which can be critical in certain applications such as implementing anti-windup and PI controllers.

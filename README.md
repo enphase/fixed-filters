@@ -72,9 +72,9 @@ The performance of this crate was benchmarked against other available `#![no_std
 
 | Crate                         | Cycles  |
 | :---------------------------- |:-------:|
-| fixed-filters                 | 88      |
-| biquad::DirectForm1           | 79      |
-| biquad::DirectForm2Transposed | 76      |
-| idsp::iir_int                 | 85      |
+| fixed-filters                 | 81      |
+| biquad::DirectForm1           | 81      |
+| biquad::DirectForm2Transposed | 73      |
+| idsp::iir_int                 | 93      |
 
-From these results, the existing [biquad](https://crates.io/crates/biquad/0.3.0) crate actually provides the best performance in the case that the microcontroller has an FPU.  This crate however does not support internal limiting of the output signal which can be critical in certain applications such as implementing anti-windup and PI controllers.  The crate has nearly identical performance to [idsp::iir_int](https://github.com/quartiq/idsp/blob/main/src/iir_int.rs).
+From these results, it can be seen that the crates all provide similar performance in terms of execution efficiency with [biquad](https://crates.io/crates/biquad/0.3.0) DirectForm2Transposed having a slight edge in microcontrollers with an FPU.  This crate however does not support internal limiting of the output signal which can be critical in certain applications such as implementing anti-windup and PI controllers.

@@ -38,7 +38,7 @@ for s in signal {
 }
 ```
 
-While passing the pole and zero coefficients is the most universal way of creating a filter, `Biquad` includes a number of associated functions for creating standard filter forms with the use specifying just the sampling period, the center frequency, and the q factor.
+While passing the pole and zero coefficients is the most universal way of creating a filter, `Biquad` includes a number of associated functions for creating standard filter forms with the user specifying just the sampling period, the center frequency, and the q factor.
 
 ```rust
 // create a butterworth lowpass filter

@@ -54,21 +54,21 @@ fn calculate_intermediate_variables(ts: f32, f0: f32, q: f32) -> (f32, f32) {
 /// ```
 pub struct Biquad<const X: i32, const Y: i32> {
     // coefficients
-    a1: Coef,
-    a2: Coef,
-    b0: Coef,
-    b1: Coef,
-    b2: Coef,
+    a1: i32,
+    a2: i32,
+    b0: i32,
+    b1: i32,
+    b2: i32,
 
     // history
-    x0: FixedI32<X>,
-    x1: FixedI32<X>,
-    y0: FixedI32<Y>,
-    y1: FixedI32<Y>,
+    x0: i32,
+    x1: i32,
+    y0: i32,
+    y1: i32,
 
     // limits
-    min_y: Option<FixedI32<Y>>,
-    max_y: Option<FixedI32<Y>>,
+    min_y: i32,
+    max_y: i32,
 }
 
 impl<const X: i32, const Y: i32> Biquad<X, Y> {
@@ -81,26 +81,26 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     pub fn new(a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) -> Self {
         let (a1, a2, b0, b1, b2) = normalize(a0, a1, a2, b0, b1, b2);
         Self {
-            a1: -Coef::from_num(a1), // store as negative so we don't need to negate in update
-            a2: -Coef::from_num(a2),
-            b0: Coef::from_num(b0),
-            b1: Coef::from_num(b1),
-            b2: Coef::from_num(b2),
-            x0: FixedI32::<X>::ZERO,
-            x1: FixedI32::<X>::ZERO,
-            y0: FixedI32::<Y>::ZERO,
-            y1: FixedI32::<Y>::ZERO,
-            min_y: None,
-            max_y: None,
+            a1: -Coef::from_num(a1).to_bits(), // store as negative so we don't need to negate in update
+            a2: -Coef::from_num(a2).to_bits(),
+            b0: Coef::from_num(b0).to_bits(),
+            b1: Coef::from_num(b1).to_bits(),
+            b2: Coef::from_num(b2).to_bits(),
+            x0: 0,
+            x1: 0,
+            y0: 0,
+            y1: 0,
+            min_y: i32::MIN,
+            max_y: i32::MAX,
         }
     }
 
     pub fn set_min(&mut self, y: f32) {
-        self.min_y = Some(FixedI32::<Y>::from_num(y));
+        self.min_y = FixedI32::<Y>::from_num(y).to_bits();
     }
 
     pub fn set_max(&mut self, y: f32) {
-        self.max_y = Some(FixedI32::<Y>::from_num(y));
+        self.max_y = FixedI32::<Y>::from_num(y).to_bits();
     }
 
     pub fn set_limit(&mut self, y: f32) {
@@ -126,43 +126,39 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// Add a new input sample and get the resulting output
     pub fn update(&mut self, x: FixedI32<X>) -> FixedI32<Y> {
         // Calculate the biquad output using Direct Form 1
-        // TODO: Consider using a double wide accumulator for better precision
-        let mut y = self.y0;
-        y *= self.a1;
-        y.mul_acc(self.a2, self.y1);
-        y.mul_acc(self.b0, x);
-        y.mul_acc(self.b1, self.x0);
-        y.mul_acc(self.b2, self.x1);
+        let y_wide = (self.a1 as i64) * (self.y0 as i64)
+            + (self.a2 as i64) * (self.y1 as i64)
+            + (self.b0 as i64) * (x.to_bits() as i64)
+            + (self.b1 as i64) * (self.x0 as i64)
+            + (self.b2 as i64) * (self.x1 as i64);
 
-        if let Some(limit) = self.min_y && y < limit{
-            y = limit;
-        }
-        if let Some(limit) = self.max_y && y > limit{
-            y = limit;
-        }
+        let mut y = (y_wide >> 30) as i32;
+
+        // add limits
+        y = y.clamp(self.min_y, self.max_y);
 
         // update the FIFOs
         self.x1 = self.x0;
-        self.x0 = x;
+        self.x0 = x.to_bits();
         self.y1 = self.y0;
         self.y0 = y;
 
-        y
+        FixedI32::<Y>::from_bits(y)
     }
 
     /// Reset the filter
     ///
     /// This will clear the fifos in the biquad filter
     pub fn reset(&mut self) {
-        self.x0 = FixedI32::<X>::ZERO;
-        self.x1 = FixedI32::<X>::ZERO;
-        self.y0 = FixedI32::<Y>::ZERO;
-        self.y1 = FixedI32::<Y>::ZERO;
+        self.x0 = 0;
+        self.x1 = 0;
+        self.y0 = 0;
+        self.y1 = 0;
     }
 
     /// Return the latest output of the filter without updating
     pub fn value(&self) -> FixedI32<Y> {
-        self.y0
+        FixedI32::<Y>::from_bits(self.y0)
     }
 
     /// Constructs a biquad filter with single pole lowpass (i.e.  "RC") behavior
@@ -341,15 +337,6 @@ mod tests {
             };
         }
         max_y
-    }
-
-    #[test]
-    fn fifo() {
-        let mut x = HistoryBuffer::<FixedI32<16>, 2>::new_with(FixedI32::<16>::ZERO);
-        x.write(FixedI32::<16>::from_num(0.2));
-        x.write(FixedI32::<16>::from_num(0.4));
-        assert_eq!(*x.recent().unwrap(), FixedI32::<16>::from_num(0.4));
-        assert_eq!(*x.oldest().unwrap(), FixedI32::<16>::from_num(0.2));
     }
 
     #[test]

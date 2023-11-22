@@ -136,24 +136,23 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         // Calculate the biquad output using Direct Form 1 with double wide accumulation
         // Testing has showed that the compiler optimises this best when coded in a single
         // line of integer multiplies/adds
-        let mut y = if X > Y {
-            (((self.a1 as i64) * (self.y0 as i64)
+        let y = if X > Y {
+            ((((self.a1 as i64) * (self.y0 as i64)
                 + (self.a2 as i64) * (self.y1 as i64)
                 + (((self.b0 as i64) * (x.to_bits() as i64)) >> (X - Y))
                 + (((self.b1 as i64) * (self.x0 as i64)) >> (X - Y))
                 + (((self.b2 as i64) * (self.x1 as i64)) >> (X - Y)))
-                >> Coef::FRAC_BITS) as i32
+                >> Coef::FRAC_BITS) as i32)
+                .clamp(self.min_y, self.max_y)
         } else {
-            (((self.a1 as i64) * (self.y0 as i64)
+            ((((self.a1 as i64) * (self.y0 as i64)
                 + (self.a2 as i64) * (self.y1 as i64)
                 + (((self.b0 as i64) * (x.to_bits() as i64)) << (Y - X))
                 + (((self.b1 as i64) * (self.x0 as i64)) << (Y - X))
                 + (((self.b2 as i64) * (self.x1 as i64)) << (Y - X)))
-                >> Coef::FRAC_BITS) as i32
+                >> Coef::FRAC_BITS) as i32)
+                .clamp(self.min_y, self.max_y)
         };
-
-        // add limits
-        y = y.clamp(self.min_y, self.max_y);
 
         // update the FIFOs
         self.x1 = self.x0;

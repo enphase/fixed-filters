@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 Enphase Energy, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 #[allow(unused_imports)]
 use micromath::F32Ext; // enable floating point sin/cos approximations in microcontrollers
 

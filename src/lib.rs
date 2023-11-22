@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 Enphase Energy, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 /*!
 # `fixed-filters`
 

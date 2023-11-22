@@ -1,3 +1,5 @@
+![continuous integration](https://github.com/enphase/fixed-filters/actions/workflows/rust.yml/badge.svg)
+
 # `fixed-filters`
 
 Biquad filters for fixed-point numbers.

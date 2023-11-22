@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 authors = ["donny zimmanck <dzimmanck@enphaseenergy.com"]
 license = "Apache-2.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories = ["no-std"]
+description = "fixed-point digital filters"
+keywords = ["biquad", "filter"]
+repository = "https://github.com/enphase/fixed-filters"
 
 [dependencies]
 fixed = "2.0.0-alpha.12"

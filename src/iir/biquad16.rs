@@ -11,63 +11,44 @@
 //    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
-
-#[allow(unused_imports)]
-use micromath::F32Ext; // enable floating point sin/cos approximations in microcontrollers
-
-use core::f32::consts::PI;
-use fixed::types::I2F30;
-use fixed::FixedI32;
-
-type Coef = I2F30;
-
-/// Normalize coefficients to 1/a0
-fn normalize(a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) -> (f32, f32, f32, f32, f32) {
-    let x = a0.recip();
-    (a1 * x, a2 * x, b0 * x, b1 * x, b2 * x)
-}
-
-/// Calculate intermediate variables needed for various filter coefficients
-fn calculate_intermediate_variables(ts: f32, f0: f32, q: f32) -> (f32, f32) {
-    let omega = 2. * PI * f0 * ts;
-    let cos_omega = omega.cos();
-    let sin_omega = omega.sin();
-    let alpha = sin_omega / (2. * q);
-    (alpha, cos_omega)
-}
-
+//
+use crate::iir::calculate_intermediate_variables;
 /// A fixed-point digital [Biquad filter](https://en.wikipedia.org/wiki/Digital_biquad_filter)
 ///
 /// This is a Direct Form 1 fixed point implementation that uses the [fixed crate](https://crates.io/crates/fixed).
 /// The filter works on fixed-point 32 bit signals where the fractional bits is passed as a constant generic
-/// `Biquad<16, 20>` will create a 32-bit biquad filter for a 32-bit signal with 16 fractional bits on the
+/// `Biquad16<16, 20>` will create a 32-bit biquad filter for a 32-bit signal with 16 fractional bits on the
 /// input and 20 fractional bits on the output.
 ///
 /// While the run methods for the filter use fixed-point arithmetic, all of the generating functions use
 /// floating-point arithmetic and inputs to simplify generation of filters.
 ///
-/// While you can create Biqad filters by passing raw coefficients using the `Biquad::new()` method,
+/// While you can create Biqad filters by passing raw coefficients using the `Biquad16::new()` method,
 /// there are also a number of associated functions for generating Biquads of different standard types.
 ///
 /// # Examples
 ///
 /// ```
-/// use fixed_filters::Biquad;
-/// use fixed::FixedI32;
+/// use fixed_filters::Biquad16;
+/// use fixed::FixedI16;
 ///
 /// let ts = 1./10e3;  // sampling period
 /// let f0 = 15.0;  // cutoff frequency
 /// let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-/// let mut filter = Biquad::<20, 20>::lowpass(ts, f0, q);
+/// let mut filter = Biquad16::<20, 20>::lowpass(ts, f0, q);
 ///
 /// let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-/// let mut y = FixedI32::<20>::ZERO;
+/// let mut y = FixedI16::<20>::ZERO;
 /// for s in signal {
-///    let x = FixedI32::<20>::from_num(s); // convert to fixed-point number
+///    let x = FixedI16::<20>::from_num(s); // convert to fixed-point number
 ///    y = filter.update(x);
 /// }
 /// ```
-pub struct Biquad<const X: i32, const Y: i32> {
+use crate::iir::normalize;
+use crate::iir::Coef;
+use fixed::FixedI16;
+
+pub struct Biquad16<const X: i32, const Y: i32> {
     // coefficients
     a1: i32,
     a2: i32,
@@ -76,17 +57,17 @@ pub struct Biquad<const X: i32, const Y: i32> {
     b2: i32,
 
     // history
-    x0: i32,
-    x1: i32,
-    y0: i32,
-    y1: i32,
+    x0: i16,
+    x1: i16,
+    y0: i16,
+    y1: i16,
 
     // limits
-    min_y: i32,
-    max_y: i32,
+    min_y: i16,
+    max_y: i16,
 }
 
-impl<const X: i32, const Y: i32> Biquad<X, Y> {
+impl<const X: i32, const Y: i32> Biquad16<X, Y> {
     /// Create a new biquad filter from the biquad coefficients
     ///
     /// While this method can be used to create any biqauad filter, most use cases
@@ -106,19 +87,19 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
             x1: 0,
             y0: 0,
             y1: 0,
-            min_y: i32::MIN,
-            max_y: i32::MAX,
+            min_y: i16::MIN,
+            max_y: i16::MAX,
         }
     }
 
     /// Set a minimum output for the filter
     pub fn set_min(&mut self, y: f32) {
-        self.min_y = FixedI32::<Y>::from_num(y).to_bits();
+        self.min_y = FixedI16::<Y>::from_num(y).to_bits();
     }
 
     /// Set a maximum output for the filter
     pub fn set_max(&mut self, y: f32) {
-        self.max_y = FixedI32::<Y>::from_num(y).to_bits();
+        self.max_y = FixedI16::<Y>::from_num(y).to_bits();
     }
 
     /// Set a +- limit for the output of the filter
@@ -146,7 +127,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     }
 
     /// Add a new input sample and get the resulting output
-    pub fn update(&mut self, x: FixedI32<X>) -> FixedI32<Y> {
+    pub fn update(&mut self, x: FixedI16<X>) -> FixedI16<Y> {
         // Calculate the biquad output using Direct Form 1 with double wide accumulation
         // Testing has showed that the compiler optimises this best when coded in a single
         // line of integer multiplies/adds
@@ -156,7 +137,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
                 + (((self.b0 as i64) * (x.to_bits() as i64)) >> (X - Y))
                 + (((self.b1 as i64) * (self.x0 as i64)) >> (X - Y))
                 + (((self.b2 as i64) * (self.x1 as i64)) >> (X - Y)))
-                >> Coef::FRAC_BITS) as i32)
+                >> Coef::FRAC_BITS) as i16)
                 .clamp(self.min_y, self.max_y)
         } else {
             ((((self.a1 as i64) * (self.y0 as i64)
@@ -164,7 +145,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
                 + (((self.b0 as i64) * (x.to_bits() as i64)) << (Y - X))
                 + (((self.b1 as i64) * (self.x0 as i64)) << (Y - X))
                 + (((self.b2 as i64) * (self.x1 as i64)) << (Y - X)))
-                >> Coef::FRAC_BITS) as i32)
+                >> Coef::FRAC_BITS) as i16)
                 .clamp(self.min_y, self.max_y)
         };
 
@@ -174,7 +155,7 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
         self.y1 = self.y0;
         self.y0 = y;
 
-        FixedI32::<Y>::from_bits(y)
+        FixedI16::<Y>::from_bits(y)
     }
 
     /// Reset the filter
@@ -188,8 +169,8 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     }
 
     /// Return the latest output of the filter without updating
-    pub fn value(&self) -> FixedI32<Y> {
-        FixedI32::<Y>::from_bits(self.y0)
+    pub fn value(&self) -> FixedI16<Y> {
+        FixedI16::<Y>::from_bits(self.y0)
     }
 
     /// Constructs a biquad filter with single pole lowpass (i.e.  "RC") behavior
@@ -199,11 +180,11 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let ts = 1./10e3;  // sampling period
     /// let f0 = 15.0;  // cutoff frequency
-    /// let mut filter = Biquad::<25, 25>::single_pole_lowpass(ts, f0);
+    /// let mut filter = Biquad16::<10, 10>::single_pole_lowpass(ts, f0);
     /// ```
     pub fn single_pole_lowpass(ts: f32, f0: f32) -> Self {
         let omega = 2. * 3.14159 * f0 * ts;
@@ -224,12 +205,12 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let ts = 1./10e3;  // sampling period
     /// let f0 = 15.0;  // cutoff frequency
     /// let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-    /// let mut filter = Biquad::<20, 20>::lowpass(ts, f0, q);
+    /// let mut filter = Biquad16::<20, 20>::lowpass(ts, f0, q);
     /// ```
     pub fn lowpass(ts: f32, f0: f32, q: f32) -> Self {
         let (alpha, cos_omega) = calculate_intermediate_variables(ts, f0, q);
@@ -249,12 +230,12 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let ts = 1./10e3;  // sampling period
     /// let f0 = 15.0;  // cutoff frequency
     /// let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-    /// let mut filter = Biquad::<20, 20>::highpass(ts, f0, q);
+    /// let mut filter = Biquad16::<20, 20>::highpass(ts, f0, q);
     /// ```
     pub fn highpass(ts: f32, f0: f32, q: f32) -> Self {
         let (alpha, cos_omega) = calculate_intermediate_variables(ts, f0, q);
@@ -274,12 +255,12 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let ts = 1./10e3;  // sampling period
     /// let f0 = 15.0;  // center frequency
     /// let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-    /// let mut filter = Biquad::<20, 20>::bandpass(ts, f0, q);
+    /// let mut filter = Biquad16::<20, 20>::bandpass(ts, f0, q);
     /// ```
     pub fn bandpass(ts: f32, f0: f32, q: f32) -> Self {
         let (alpha, cos_omega) = calculate_intermediate_variables(ts, f0, q);
@@ -299,12 +280,12 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let ts = 1./10e3;  // sampling period
     /// let f0 = 15.0;  // notch frequency
     /// let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-    /// let mut filter = Biquad::<20, 20>::notch(ts, f0, q);
+    /// let mut filter = Biquad16::<20, 20>::notch(ts, f0, q);
     /// ```
     pub fn notch(ts: f32, f0: f32, q: f32) -> Self {
         let (alpha, cos_omega) = calculate_intermediate_variables(ts, f0, q);
@@ -322,11 +303,11 @@ impl<const X: i32, const Y: i32> Biquad<X, Y> {
     /// # Examples
     ///
     /// ```
-    /// use fixed_filters::Biquad;
+    /// use fixed_filters::Biquad16;
     ///
     /// let kp = 0.2;
     /// let ki = 0.1;
-    /// let mut filter = Biquad::<25, 30>::pi(kp, ki);
+    /// let mut filter = Biquad16::<10, 30>::pi(kp, ki);
     /// ```
     pub fn pi(kp: f32, ki: f32) -> Self {
         let a0 = 1.;
@@ -344,23 +325,24 @@ mod tests {
 
     use super::*;
     use approx::assert_abs_diff_eq;
+    use core::f32::consts::PI;
 
     // simulation function
     fn simulate<const X: i32, const Y: i32>(
         f: f32,
         fs: f32,
-        filter: &mut Biquad<X, Y>,
-    ) -> FixedI32<Y> {
+        filter: &mut Biquad16<X, Y>,
+    ) -> FixedI16<Y> {
         // simulate
         let mut t = 0.0;
         let dt = 1. / fs;
         let stop = 10. / f;
-        let mut y = FixedI32::<Y>::ZERO;
+        let mut y = FixedI16::<Y>::ZERO;
         let mut max_y = y;
         while t < stop {
             t += dt;
             let x = (2.0 * PI * f * t).sin();
-            y = filter.update(FixedI32::<X>::from_num(x));
+            y = filter.update(FixedI16::<X>::from_num(x));
 
             // allow the filter to converge before we record the amplitude
             if t > 0.9 * stop && y > max_y {
@@ -374,20 +356,20 @@ mod tests {
     fn pi() {
         let kp = 0.2;
         let ki = 0.1;
-        let mut filter = Biquad::<25, 25>::pi(kp, ki);
+        let mut filter = Biquad16::<13, 13>::pi(kp, ki);
 
-        let mut y = filter.update(FixedI32::<25>::from_num(1.0));
+        let mut y = filter.update(FixedI16::<13>::from_num(1.0));
         assert_abs_diff_eq!(f64::from(y), 0.3, epsilon = 0.0001);
-        y = filter.update(FixedI32::<25>::from_num(1.0));
+        y = filter.update(FixedI16::<13>::from_num(1.0));
         assert_abs_diff_eq!(f64::from(y), 0.4, epsilon = 0.0001);
     }
 
     #[test]
     fn lowpass() {
-        let fs = 10e3;
+        let fs = 1e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter = Biquad::<25, 25>::lowpass(1. / fs, f0, q);
+        let mut filter = Biquad16::<12, 12>::lowpass(1. / fs, f0, q);
 
         // simulate
         filter.reset();
@@ -401,10 +383,10 @@ mod tests {
 
     #[test]
     fn highpass() {
-        let fs = 10e3;
+        let fs = 1e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter = Biquad::<25, 25>::highpass(1. / fs, f0, q);
+        let mut filter = Biquad16::<12, 12>::highpass(1. / fs, f0, q);
 
         // simulate
         filter.reset();
@@ -418,10 +400,10 @@ mod tests {
 
     #[test]
     fn bandpass() {
-        let fs = 10e3;
+        let fs = 1e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter = Biquad::<25, 25>::bandpass(1. / fs, f0, q);
+        let mut filter = Biquad16::<12, 12>::bandpass(1. / fs, f0, q);
 
         // simulate
         filter.reset();
@@ -442,7 +424,7 @@ mod tests {
         let fs = 1e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter = Biquad::<25, 25>::notch(1. / fs, f0, q);
+        let mut filter = Biquad16::<10, 10>::notch(1. / fs, f0, q);
 
         // simulate
         filter.reset();
@@ -462,17 +444,17 @@ mod tests {
     fn limits() {
         let kp = 0.2;
         let ki = 0.1;
-        let mut filter = Biquad::<25, 25>::pi(kp, ki).with_max(1.0);
-        let mut y = FixedI32::<25>::ZERO;
+        let mut filter = Biquad16::<10, 10>::pi(kp, ki).with_max(1.0);
+        let mut y = FixedI16::<10>::ZERO;
         for _ in 0..100 {
-            y = filter.update(FixedI32::<25>::from_num(1.0))
+            y = filter.update(FixedI16::<10>::from_num(1.0))
         }
         assert!(y <= 1.0);
 
-        let mut filter = Biquad::<25, 25>::pi(kp, ki).with_min(-1.0);
-        let mut y = FixedI32::<25>::ZERO;
+        let mut filter = Biquad16::<10, 10>::pi(kp, ki).with_min(-1.0);
+        let mut y = FixedI16::<10>::ZERO;
         for _ in 0..100 {
-            y = filter.update(FixedI32::<25>::from_num(-1.0))
+            y = filter.update(FixedI16::<10>::from_num(-1.0))
         }
         assert!(y >= -1.0);
     }
@@ -483,9 +465,9 @@ mod tests {
         let fs = 10e3;
         let f0 = 60.0;
         let q = core::f32::consts::FRAC_1_SQRT_2; // butterworth
-        let mut filter0 = Biquad::<25, 25>::lowpass(1. / fs, f0, q);
-        let mut filter1 = Biquad::<25, 20>::lowpass(1. / fs, f0, q);
-        let mut filter2 = Biquad::<20, 25>::lowpass(1. / fs, f0, q);
+        let mut filter0 = Biquad16::<13, 13>::lowpass(1. / fs, f0, q);
+        let mut filter1 = Biquad16::<12, 13>::lowpass(1. / fs, f0, q);
+        let mut filter2 = Biquad16::<14, 13>::lowpass(1. / fs, f0, q);
 
         // // simulate
         let a0 = simulate(f0, fs, &mut filter0);
